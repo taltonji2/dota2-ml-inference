@@ -1,13 +1,16 @@
 # One image for the API, the dashboard and the ingest CLI.
 FROM python:3.12-slim AS build
+# EXTRAS=replay adds gem-dota for local replay parsing (image grows from about 205 MB to about 490 MB).
+# Build with EXTRAS= for an API-only image, e.g. for Lambda.
+ARG EXTRAS=replay
 WORKDIR /src
 COPY pyproject.toml ./
 COPY dota ./dota
 COPY app ./app
-RUN pip install --no-cache-dir --prefix=/install .
+RUN pip install --no-cache-dir --prefix=/install ".${EXTRAS:+[$EXTRAS]}"
 
 FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DOTA_DB=/app/data/dota.sqlite
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DOTA_DB=/app/data/dota.sqlite DOTA_REPLAY_DB=/app/data/replays.sqlite
 RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=build /install /usr/local
