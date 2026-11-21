@@ -7,3 +7,4 @@ data/*
 ml/*.joblib
 reports/
 .env
+*.egg-info/

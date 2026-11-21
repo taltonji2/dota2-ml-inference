@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dota 2 Momentum</title>
+<!-- Chart.js 4.4.4 (MIT) is vendored so the dashboard works offline and on Lambda -->
+<script src="/static/vendor/chart-4.4.4.umd.js"></script>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e3e3de; --up:#2f7d4f; --down:#b3402e; --accent:#3a5ba0; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151513; --fg:#ececea; --muted:#9a9a94; --card:#1f1f1c; --line:#33332f; --accent:#7f9fe0; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:13px; color:var(--muted); gap:4px; }
+  select, button { font:inherit; padding:6px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  button { background:var(--accent); color:#fff; border:none; cursor:pointer; }
+  ul { padding-left: 18px; margin: 8px 0 0; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dota 2 Momentum</h1>
+  <p class="sub">Per-minute momentum against the lane opponent, swings, and team turning points.</p>
+
+  <div class="card controls">
+    <label>Match <select id="match"></select></label>
+    <label>Player slot <select id="slot"></select></label>
+    <button id="go">Show</button>
+  </div>
+
+  <div class="card"><canvas id="chart" height="110"></canvas></div>
+  <div class="card"><strong>Swings</strong><ul id="swings"><li class="empty">Pick a match.</li></ul></div>
+  <div class="card"><strong>Turning points</strong><ul id="turns"><li class="empty">Pick a match.</li></ul></div>
+  <div class="card"><strong>Bracket prediction</strong><p class="empty" id="predict">Model not trained yet.</p></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let chart;
+
+async function getJSON(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+  return r.json();
+}
+
+async function loadMatches() {
+  try {
+    const matches = await getJSON('/matches?limit=100');
+    $('match').innerHTML = matches.map(m => `<option value="${m.match_id}">${m.match_id} (${m.bracket ?? 'unknown'})</option>`).join('');
+    if (matches.length) await loadPlayers();
+    else $('swings').innerHTML = '<li class="empty">No parsed matches yet. Run the ingest.</li>';
+  } catch (e) { $('swings').innerHTML = `<li class="empty">${e.message}</li>`; }
+}
+
+async function loadPlayers() {
+  const m = await getJSON(`/matches/${$('match').value}`);
+  $('slot').innerHTML = m.players.map(p =>
+    `<option value="${p.player_slot}">${p.is_radiant ? 'Radiant' : 'Dire'} slot ${p.player_slot}, hero ${p.hero_id}</option>`).join('');
+}
+
+function eventText(e) { return `${Math.floor(e.t_s/60)}:${String(e.t_s%60).padStart(2,'0')} ${e.kind}${e.detail ? ' ' + e.detail.replace('npc_dota_hero_','').replace('item_','') : ''}`; }
+
+async function show() {
+  const mid = $('match').value, slot = $('slot').value;
+  const [mo, tp] = await Promise.all([
+    getJSON(`/matches/${mid}/players/${slot}/momentum`),
+    getJSON(`/matches/${mid}/turning-points`),
+  ]);
+  const css = getComputedStyle(document.documentElement);
+  const data = {
+    labels: mo.series.map(s => s.minute),
+    datasets: [{ label: 'Momentum vs lane opponent', data: mo.series.map(s => s.momentum),
+      borderColor: css.getPropertyValue('--accent'), pointRadius: 0, tension: 0.25 }],
+  };
+  if (chart) chart.destroy();
+  chart = new Chart($('chart'), { type: 'line', data, options: {
+    scales: { x: { title: { display: true, text: 'Minute' } }, y: { min: -1, max: 1, title: { display: true, text: 'Momentum' } } },
+    plugins: { legend: { display: false } } } });
+
+  $('swings').innerHTML = mo.swings.length ? mo.swings.map(s =>
+    `<li class="${s.direction}">${s.start_minute} to ${s.end_minute} min: ${s.change > 0 ? '+' : ''}${s.change}` +
+    (s.events.length ? `<br><small>${s.events.slice(0,5).map(eventText).join(', ')}</small>` : '') + '</li>').join('')
+    : '<li class="empty">No swings above the threshold.</li>';
+  $('turns').innerHTML = tp.turning_points.length ? tp.turning_points.map(p =>
+    `<li>${p.minute} min: ${p.kind === 'lead_change' ? `${p.leader} takes the lead` : `${Math.abs(p.gold_change).toLocaleString()} gold swing toward ${p.toward} over ${p.end_minute - p.minute} min`}</li>`).join('')
+    : '<li class="empty">No turning points.</li>';
+}
+
+$('match').addEventListener('change', loadPlayers);
+$('go').addEventListener('click', () => show().catch(e => { $('swings').innerHTML = `<li class="empty">${e.message}</li>`; }));
+loadMatches();
+</script>
+</body>
+</html>

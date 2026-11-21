@@ -1,0 +1,38 @@
+# Local, small-scale stack. Everything shares ./data (SQLite) and ./ml (model file).
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: dota2-ml-inference:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./ml:/app/ml
+    environment:
+      DOTA_DB: /app/data/dota.sqlite
+    mem_limit: 384m
+    restart: unless-stopped
+
+  # Run on demand, for example:
+  #   docker compose run --rm ingest sample --bracket ancient_divine --limit 20 --request-parses
+  ingest:
+    image: dota2-ml-inference:local
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "dota.ingest"]
+    volumes:
+      - ./data:/app/data
+    environment:
+      DOTA_DB: /app/data/dota.sqlite
+      OPENDOTA_API_KEY: ${OPENDOTA_API_KEY:-}
+    mem_limit: 256m
+
+  # docker compose run --rm spike --per-bracket 20
+  spike:
+    image: dota2-ml-inference:local
+    profiles: ["tools"]
+    entrypoint: ["python", "scripts/spike.py"]
+    volumes:
+      - ./reports:/app/reports
+    mem_limit: 256m
