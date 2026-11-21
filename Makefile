@@ -1,7 +1,7 @@
-.PHONY: install test build up down spike ingest pending demo
+.PHONY: install test build up down spike ingest pending demo replays
 
 install:
-	python -m pip install -e ".[dev]"
+	python -m pip install -e ".[dev,replay]"
 
 test:
 	python -m pytest -q
@@ -29,3 +29,7 @@ pending: build
 # Seed one synthetic match so the dashboard works offline
 demo: build
 	docker compose run --rm --entrypoint python ingest -m dota.demo
+
+# make replays LIMIT=5 SAMPLE_TICKS=1   (1 = every tick, 30 = once a second)
+replays: build
+	docker compose run --rm replays --sample-ticks $(or $(SAMPLE_TICKS),1) run --limit $(or $(LIMIT),5)

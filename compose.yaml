@@ -28,6 +28,23 @@ services:
       OPENDOTA_API_KEY: ${OPENDOTA_API_KEY:-}
     mem_limit: 256m
 
+  # Download and parse full replays, one at a time, deleting each .dem afterwards:
+  #   docker compose run --rm replays run --limit 5
+  #   docker compose run --rm replays --sample-ticks 30 run --limit 50   # once a second, ~30x smaller
+  # Your own replays: put .dem files in ./replays and run
+  #   docker compose run --rm replays file /app/replays/8012345678.dem
+  replays:
+    image: dota2-ml-inference:local
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "dota.replays"]
+    volumes:
+      - ./data:/app/data
+      - ./replays:/app/replays
+    environment:
+      DOTA_DB: /app/data/dota.sqlite
+      DOTA_REPLAY_DB: /app/data/replays.sqlite
+    mem_limit: 1g
+
   # docker compose run --rm spike --per-bracket 20
   spike:
     image: dota2-ml-inference:local

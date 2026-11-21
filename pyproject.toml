@@ -11,6 +11,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ml = ["scikit-learn>=1.5", "joblib>=1.4"]
+# gem-dota internals are used for streaming, so pin the exact version
+replay = ["gem-dota==0.14.0"]
 dev = ["pytest>=8"]
 
 [build-system]

@@ -16,6 +16,33 @@ Player momentum and skill-bracket analysis for Dota 2 public matches. A small Fa
 
 [OpenDota API](https://docs.opendota.com/), free tier, no key: about 60 calls a minute and 2,000 a day. Only **parsed** matches carry per-minute series, and replays expire from Valve's servers after roughly two weeks, so ingest samples recent public matches by rank and asks OpenDota to parse the unparsed ones. Raw JSON is never stored; each match becomes compact rows.
 
+## Full replay parsing
+
+OpenDota's summary has values once a minute and positions only for the first 10 minutes. For the full picture, `dota.replays` downloads each match's replay, parses it locally with [gem-dota](https://pypi.org/project/gem-dota/), and stores:
+
+- `hero_ticks`: every hero at every tick (30 a second) with position, health, mana, level, net worth, gold, XP, last hits, denies, hero damage and deaths.
+- `combat_log`: every combat log entry that involves a hero (damage, heals, deaths, abilities, items, purchases, gold, XP), with names interned into a `names` table.
+- `replay_parses`: replay size, parse time, peak memory and row counts per match, so costs are measured.
+
+It also writes per-minute rows and kill/death events into the main database, so the momentum endpoints work for matches OpenDota never parsed.
+
+Replay data goes to its own file, `data/replays.sqlite`, so the API database stays small. Replays are streamed to disk, parsed one at a time and deleted. Rows are written in batches of 20,000, so memory stays flat however long the game.
+
+| Sampling | Hero rows, 45-min game | Disk per match | 100 matches | 1,000 matches |
+| --- | --- | --- | --- | --- |
+| Every tick (`--sample-ticks 1`, default) | 810,000 | about 55 MB, plus the combat log | about 6 GB | about 60 GB |
+| Once a second (`--sample-ticks 30`) | 27,000 | about 2 MB, plus the combat log | about 0.3 GB | about 3 GB |
+
+Hero-row sizes are measured by writing a synthetic 45-minute game; combat log size is still to be measured on real replays. Replays expire from Valve's servers after roughly two weeks, so parse soon after ingest.
+
+```bash
+make ingest BRACKET=ancient_divine LIMIT=20   # finds matches and requests parses, which publishes replay URLs
+make pending                                  # picks up the replay URLs
+make replays LIMIT=5                          # download, parse, delete; every tick
+make replays LIMIT=50 SAMPLE_TICKS=30         # once a second
+docker compose run --rm replays file /app/replays/<match_id>.dem   # your own replays, from ./replays
+```
+
 ## Quick start
 
 ```bash
@@ -48,10 +75,10 @@ Interactive docs at `/docs`.
 
 ```text
 app/          FastAPI app and the static dashboard (Chart.js vendored, MIT)
-dota/         OpenDota client, ingest CLI, SQLite schema, momentum, synthetic demo
+dota/         OpenDota client, ingest CLI, replay pipeline, SQLite schema, momentum, synthetic demo
 scripts/      spike.py, the day-one data check
 tests/        pytest suite, no network needed
-docker/       Dockerfile (python:3.12-slim, about 205 MB)
+docker/       Dockerfile (python:3.12-slim; about 490 MB with the replay parser, 205 MB API-only)
 compose.yaml  api service plus on-demand ingest and spike tools
 ```
 

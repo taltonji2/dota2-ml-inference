@@ -45,6 +45,7 @@ def match_row(m: dict[str, Any], avg_rank_tier: float | None = None) -> dict[str
         "bracket": bracket_for(avg_rank_tier),
         "radiant_win": int(bool(m.get("radiant_win"))),
         "parsed_at": int(time.time()) if is_parsed(m) else None,
+        "replay_url": m.get("replay_url"),
     }
 
 
@@ -125,13 +126,15 @@ def store_match(
     row = match_row(m, avg_rank_tier)
     with conn:
         conn.execute(
-            """INSERT INTO matches (match_id, start_time, duration_s, patch, avg_rank_tier, bracket, radiant_win, parsed_at)
-               VALUES (:match_id, :start_time, :duration_s, :patch, :avg_rank_tier, :bracket, :radiant_win, :parsed_at)
+            """INSERT INTO matches (match_id, start_time, duration_s, patch, avg_rank_tier, bracket, radiant_win, parsed_at, replay_url)
+               VALUES (:match_id, :start_time, :duration_s, :patch, :avg_rank_tier, :bracket, :radiant_win, :parsed_at, :replay_url)
                ON CONFLICT(match_id) DO UPDATE SET
                  duration_s=excluded.duration_s, patch=excluded.patch,
                  avg_rank_tier=COALESCE(matches.avg_rank_tier, excluded.avg_rank_tier),
                  bracket=COALESCE(matches.bracket, excluded.bracket),
-                 radiant_win=excluded.radiant_win, parsed_at=excluded.parsed_at""",
+                 radiant_win=excluded.radiant_win,
+                 parsed_at=COALESCE(excluded.parsed_at, matches.parsed_at),
+                 replay_url=COALESCE(excluded.replay_url, matches.replay_url)""",
             row,
         )
         conn.executemany(
