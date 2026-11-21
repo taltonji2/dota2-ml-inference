@@ -7,3 +7,7 @@ data/*
 ml/*.joblib
 reports/
 .env
+*.egg-info/
+replays/
+*.dem
+*.dem.bz2
